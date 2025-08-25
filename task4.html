@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weather Dashboard</title>
+  <style>
+    :root {
+      --bg1: #0f172a; /* slate-900 */
+      --bg2: #1e293b; /* slate-800 */
+      --accent: #22d3ee; /* cyan-400 */
+      --card: #0b1220; /* deep */
+      --muted: #94a3b8; /* slate-400 */
+      --text: #e2e8f0; /* slate-200 */
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 10% -10%, #0ea5e9 0%, transparent 40%),
+                  radial-gradient(1000px 700px at 110% 10%, #9333ea 0%, transparent 45%),
+                  linear-gradient(180deg, var(--bg1), var(--bg2));
+    }
+    .container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:20px; }
+    header h1 { margin:0; font-size: clamp(20px, 3vw, 28px); letter-spacing: .5px; }
+    .search { display:flex; gap:8px; align-items:center; }
+    .search input {
+      width: min(60vw, 360px);
+      padding: 12px 14px;
+      background: rgba(255,255,255,.06);
+      border: 1px solid rgba(255,255,255,.12);
+      color: var(--text);
+      border-radius: 12px;
+      outline: none;
+    }
+    .btn {
+      padding: 12px 14px; border-radius: 12px; border: 0; cursor: pointer;
+      background: linear-gradient(90deg, #22d3ee, #60a5fa);
+      color: #0b1220; font-weight: 700;
+      transition: transform .15s ease, filter .2s ease;
+    }
+    .btn:hover { transform: translateY(-1px); filter: brightness(1.05); }
+    .grid { display:grid; gap:16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .card { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.12); border-radius: 16px; padding: 18px; backdrop-filter: blur(6px); box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+    .city-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+    .city-title h2 { margin:0; font-size:20px; font-weight:700; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .hero { display:flex; align-items:center; justify-content:space-between; gap:14px; }
+    .hero .temp { font-size: 42px; font-weight: 800; letter-spacing: .5px; }
+    .hero img { width: 72px; height: 72px; image-rendering: -webkit-optimize-contrast; }
+    .details { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top: 10px; }
+    .pill { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 10px; text-align:center; font-size: 13px; }
+    .forecast { display:grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 10px; }
+    .f-item { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1); border-radius: 12px; padding: 12px; text-align:center; }
+    .f-item img { width: 44px; height: 44px; }
+    .row { display:flex; gap:16px; align-items:stretch; }
+    .row > .card { flex: 1; }
+
+    .toast { margin: 10px 0; padding: 12px 14px; border-radius: 12px; border:1px solid rgba(255,255,255,.14); background: rgba(244,63,94,.15); color:#fecdd3; }
+    .loading { height: 120px; border-radius: 16px; background: linear-gradient(90deg, rgba(255,255,255,.06), rgba(255,255,255,.1), rgba(255,255,255,.06)); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    @media (max-width: 640px) { .hero .temp { font-size: 34px; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🌤 Weather Dashboard</h1>
+      <div class="search">
+        <input id="cityInput" placeholder="Search city (e.g., Cairo or London, GB)" />
+        <button class="btn" id="btnSearch">Search</button>
+        <button class="btn" id="btnLocate" title="Use my location">📍</button>
+      </div>
+    </header>
+
+    <div id="note" class="muted" style="margin-bottom:10px">Tip: You can type just the city name (e.g., <b>Cairo</b>) or city + country code (e.g., <b>Paris, FR</b>). Arabic works too.</div>
+
+    <div id="alerts"></div>
+
+    <div id="cards" class="grid"></div>
+  </div>
+
+  <script>
+    const apiKey = "03f12e5cad207eb5bdece46f9c89ed3d"; // ← your OpenWeather key
+
+    // Helpful aliases for Egyptian cities
+    const aliases = {
+      "6th of october": "Sixth of October City, EG",
+      "6 october": "Sixth of October City, EG",
+      "sixth of october": "Sixth of October City, EG",
+      "october": "Sixth of October City, EG",
+      "sheikh zayed": "Sheikh Zayed City, EG",
+      "el sheikh zayed": "Sheikh Zayed City, EG",
+      "giza": "Giza, EG",
+      "alex": "Alexandria, EG",
+    };
+
+    const aliasCoords = {
+      "sixth of october city, eg": { lat: 29.9336, lon: 30.9138 },
+      "sheikh zayed city, eg": { lat: 30.0419, lon: 30.9760 },
+    };
+
+    const cardsEl = document.getElementById('cards');
+    const alertsEl = document.getElementById('alerts');
+
+    document.getElementById('btnSearch').addEventListener('click', () => handleSearch());
+    document.getElementById('btnLocate').addEventListener('click', () => fetchByGeolocation());
+    document.getElementById('cityInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleSearch();
+    });
+
+    // ---- Main search flow (robust) ----
+    async function handleSearch() {
+      alertsEl.innerHTML = '';
+      const raw = document.getElementById('cityInput').value.trim();
+      if (!raw) { toast('Please type a city name or use 📍'); return; }
+
+      const normalized = normalizeQuery(raw);
+      showLoading();
+
+      try {
+        // 1) Try geocoding the (possibly aliased) string
+        const coords = await geocodeToCoords(normalized);
+        if (!coords) {
+          hideLoading();
+          toast(`City not found: <b>${escapeHtml(raw)}</b>`);
+          return;
+        }
+
+        // 2) With coords, fetch forecast
+        const forecast = await fetchForecast(coords.lat, coords.lon);
+        hideLoading();
+        if (!forecast) { toast('Could not fetch forecast.'); return; }
+
+        renderCityWeather(forecast);
+      } catch (err) {
+        hideLoading();
+        toast('Error: ' + (err?.message || err));
+      }
+    }
+
+    function normalizeQuery(q) {
+      const key = q.trim().toLowerCase();
+      if (aliases[key]) return aliases[key];
+      return q; // keep user input
+    }
+
+    async function geocodeToCoords(query) {
+      // Direct alias -> pre-known coords
+      const aliasKey = query.trim().toLowerCase();
+      if (aliasCoords[aliasKey]) return aliasCoords[aliasKey];
+
+      const url = `https://api.openweathermap.org/geo/1.0/direct?q=${encodeURIComponent(query)}&limit=5&appid=${apiKey}`;
+      const r = await fetch(url);
+      const arr = await r.json();
+
+      if (!Array.isArray(arr) || arr.length === 0) return null;
+
+      // Prefer Egypt if user didn't specify a country
+      const hasComma = /,.+/.test(query);
+      let best = arr[0];
+      if (!hasComma) {
+        const eg = arr.find(x => x.country === 'EG');
+        if (eg) best = eg;
+      }
+      return { lat: best.lat, lon: best.lon, name: best.name, country: best.country };
+    }
+
+    async function fetchForecast(lat, lon) {
+      const url = `https://api.openweathermap.org/data/2.5/forecast?lat=${lat}&lon=${lon}&appid=${apiKey}&units=metric`;
+      const r = await fetch(url);
+      const data = await r.json();
+
+      if (String(data.cod) !== '200') {
+        const msg = data?.message || 'Unknown error';
+        throw new Error(`API error (${data.cod}): ${msg}`);
+      }
+      return data;
+    }
+
+    function formatLocalTime(dt, timezone) {
+  
+  const local = (dt + timezone); 
+  return new Date(local * 1000).toLocaleString();
+}
+
+    // ---- UI helpers ----
+    function showLoading() { cardsEl.innerHTML = `<div class="loading"></div>`; }
+    function hideLoading() { /* noop, render will replace */ }
+
+    function toast(html) { alertsEl.innerHTML = `<div class="toast">${html}</div>`; }
+    function escapeHtml(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c])); }
+
+    function renderCityWeather(data) {
+      const city = data.city;
+      const current = data.list[0];
+
+      // Build 3-day forecast picking around 12:00 local
+      const byDay = {};
+      for (const item of data.list) {
+        const d = new Date(item.dt * 1000);
+        const dayKey = d.toISOString().slice(0,10);
+        if (!byDay[dayKey]) byDay[dayKey] = [];
+        byDay[dayKey].push(item);
+      }
+      const dayKeys = Object.keys(byDay).slice(0, 4); // today + next 3
+      const next3 = dayKeys.slice(1,4).map(k => chooseMidday(byDay[k]) || byDay[k][0]).filter(Boolean);
+
+      const mainCard = `
+        <div class="card">
+          <div class="city-title">
+            <h2>${city.name}, ${city.country}</h2>
+            <span class="muted">${formatLocalTime(current.dt, data.city.timezone)}</span>
+
+          </div>
+          <div class="hero">
+            <div class="temp">${Math.round(current.main.temp)}°C</div>
+            <img src="https://openweathermap.org/img/wn/${current.weather[0].icon}@2x.png" alt="icon"/>
+          </div>
+          <div class="muted" style="margin-top:4px; text-transform:capitalize">${current.weather[0].description}</div>
+          <div class="details">
+            <div class="pill">💧 Humidity<br><b>${current.main.humidity}%</b></div>
+            <div class="pill">💨 Wind<br><b>${Math.round(current.wind.speed)} m/s</b></div>
+            <div class="pill">🌡️ Feels like<br><b>${Math.round(current.main.feels_like)}°C</b></div>
+          </div>
+        </div>`;
+
+      const forecastCard = `
+        <div class="card">
+          <div class="city-title"><h2>Next 3 days</h2></div>
+          <div class="forecast">
+            ${next3.map(item => `
+              <div class="f-item">
+                <div class="muted">${new Date(item.dt*1000).toLocaleDateString()}</div>
+                <img src="https://openweathermap.org/img/wn/${item.weather[0].icon}.png" alt="ico"/>
+                <div style="font-weight:800; font-size:18px; margin-top:6px;">${Math.round(item.main.temp)}°C</div>
+                <div class="muted" style="text-transform:capitalize">${item.weather[0].description}</div>
+              </div>`).join('')}
+          </div>
+        </div>`;
+
+      cardsEl.innerHTML = mainCard + forecastCard;
+    }
+
+    function chooseMidday(arr){
+      if (!arr || !arr.length) return null;
+      // Find time closest to 12:00
+      const target = 12;
+      let best = null, bestDiff = 1e9;
+      for (const it of arr) {
+        const hour = new Date(it.dt*1000).getHours();
+        const diff = Math.abs(hour - target);
+        if (diff < bestDiff) { best = it; bestDiff = diff; }
+      }
+      return best;
+    }
+
+    // Geolocation button
+    async function fetchByGeolocation() {
+      alertsEl.innerHTML = '';
+      showLoading();
+      if (!navigator.geolocation) { hideLoading(); toast('Geolocation is not supported in this browser.'); return; }
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        try {
+          const { latitude: lat, longitude: lon } = pos.coords;
+          const data = await fetchForecast(lat, lon);
+          hideLoading();
+          renderCityWeather(data);
+        } catch (e) { hideLoading(); toast('Failed to get your location weather.'); }
+      }, (err) => { hideLoading(); toast('Location permission denied.'); });
+    }
+
+    // Auto-load: try geolocation, else default to Cairo
+    (async function init(){
+      try { await fetchByGeolocation(); }
+      catch { document.getElementById('cityInput').value = 'Cairo'; handleSearch(); }
+    })();
+  </script>
+</body>
+</html>
